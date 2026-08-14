@@ -1,0 +1,10 @@
+blackbox.db
+blackbox.db-wal
+blackbox.db-shm
+sandbox/
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+build/
+dist/

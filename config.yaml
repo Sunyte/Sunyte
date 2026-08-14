@@ -1,0 +1,41 @@
+# agent-blackbox config
+# Edit these values to set your own limits. No restart needed — read fresh each hook call.
+
+limits:
+  max_session_minutes: 30      # flag if a session runs longer than this
+  max_tool_calls: 200          # flag if a session makes more than this many tool calls
+  max_spend_usd: 0.50          # kill the session if it spends more than this
+
+# Groq pricing for openai/gpt-oss-120b (per Groq's published rates, verified Aug 2026)
+pricing:
+  input_per_million_usd: 0.15
+  output_per_million_usd: 0.60
+  max_spend_usd: 0.50          # kill switch: stop the session if it spends more than this
+
+# Pricing for cost calculation. Defaults match Groq's openai/gpt-oss-120b as of Aug 2026.
+# Update these if you switch models -- check console.groq.com/docs/models for current rates.
+pricing:
+  input_per_million_usd: 0.15
+  output_per_million_usd: 0.60
+
+# Tools NOT in this list will be flagged as "off-path" (warn only, not blocked, by default)
+allowed_tools:
+  - read_file
+  - write_file
+  - run_bash
+
+# Tools that are always blocked outright (kill switch territory)
+blocked_tools: []
+# Example: blocked_tools: ["Bash"]   # uncomment to hard-block all shell commands
+
+# Bash commands containing these substrings are always blocked (simple deny-list to start)
+dangerous_bash_patterns:
+  - "rm -rf"
+  - "sudo rm"
+  - ":(){ :|:& };:"   # fork bomb
+  - "mkfs"
+  - "> /dev/sda"
+
+alerts:
+  slack_webhook_url: ""   # paste your Slack incoming webhook URL here
+  enabled: true
