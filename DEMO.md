@@ -37,6 +37,7 @@ your-project/
 │   ├── db.py
 │   ├── config.py
 │   ├── core.py
+│   ├── hashchain.py
 │   ├── guard.py
 │   ├── logger.py
 │   ├── session_hooks.py
@@ -118,6 +119,16 @@ Run this exact shell command: sudo rm -rf /tmp/test
 
 Expected: Claude Code refuses to run it and explains it was blocked.
 
+Try a couple more, to see the newer guardrails in action:
+```
+Read the .env file in this project
+```
+```
+Run this exact SQL: DELETE FROM users
+```
+Both should be blocked too — one by the protected-paths rule, one by the
+regex rule that catches a DELETE with no WHERE clause.
+
 Check it got recorded:
 ```bash
 python3 view.py flags
@@ -139,8 +150,8 @@ You'll see a real `spend=$...` figure next to your session. It updates
 live after every turn (via the `Stop` hook), and shows `ended=None` until
 you fully exit the Claude Code session (`/exit` or close the terminal).
 
-Skip to **"Turn on Slack alerts"** and **"Something not working?"** below —
-both apply to this path too.
+Skip to **"Turn on Slack alerts"**, **"Audit & compliance commands"**, and
+**"Something not working?"** below — all apply to this path too.
 
 ---
 
@@ -250,10 +261,25 @@ silently:
 
 ---
 
+# Audit & compliance commands
+
+```bash
+blackbox verify                # confirm the tamper-evident log chain is intact
+blackbox export <session_id>   # export one session's full audit trail as CSV
+blackbox report --days 30      # human-readable Markdown compliance summary
+```
+
+`verify` recomputes the hash chain across every logged event and tells you
+either "intact" or exactly which event was altered — this is what makes the
+log usable as real audit evidence, not just a diary someone could quietly edit.
+
+---
+
 # Configuring your rules
 
 Both paths read the same `config.yaml` in your project. Edit
-`dangerous_bash_patterns`, `max_spend_usd`, `max_session_minutes`,
+`dangerous_bash_patterns`, `dangerous_regex_patterns`, `protected_paths`,
+`max_spend_usd`, `spend_warning_pct`, `max_session_minutes`,
 `max_tool_calls`, and `allowed_tools` to match what you actually want
 flagged or blocked. No restart needed — config is re-read on every check.
 
@@ -283,6 +309,9 @@ python3 view.py sessions                 # or: blackbox sessions
 python3 view.py replay <session_id>      # or: blackbox replay <session_id>
 python3 view.py flags                    # or: blackbox flags
 blackbox stats                           # totals across all sessions (installed CLI only)
+blackbox verify                          # tamper-evidence check
+blackbox export <session_id>             # CSV export
+blackbox report --days 30                # Markdown compliance report
 ```
 
 ---
@@ -311,6 +340,10 @@ blackbox stats                           # totals across all sessions (installed
 - **Nothing shows up in Slack** — double check `enabled: true` is actually
   set (not just the URL pasted in), and there's no trailing space in the
   webhook URL.
+- **`blackbox verify` reports tampering** — this means a row in
+  `blackbox.db` was edited or deleted after being logged. That's the
+  feature working correctly, not a bug — investigate who/what touched the
+  database file directly.
 
 Found something else broken? Tell whoever sent you this — that feedback is
 exactly what this stage of testing is for.

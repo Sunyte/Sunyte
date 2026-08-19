@@ -10,11 +10,16 @@ your codebase at 2am.
 ## What it actually does
 
 - **Logs every tool call** your agent makes — what it ran, what it touched, when
-- **Blocks risky actions before they execute** — dangerous shell commands, tools
-  outside an allowed list, sessions that run too long or spend too much
-- **Tracks real spend in dollars**, not just token counts
+- **Blocks risky actions before they execute** — dangerous shell commands, writes
+  to protected paths, tools outside an allowed list, sessions that run too long
+  or spend too much
+- **Tracks real spend in dollars**, not just token counts, with warnings before
+  the hard limit hits
+- **Tamper-evident logs** — every event is hash-chained to the one before it, so
+  any edit or deletion after the fact is detectable
 - **Alerts you on Slack** the moment something gets flagged or blocked
 - **Replays any session** step by step after the fact
+- **Exports audit reports** (CSV per-session, Markdown compliance summaries)
 
 It's local-first: everything is logged to a SQLite file in your project. No
 account, no cloud dashboard, no data leaving your machine unless you turn on
@@ -74,10 +79,18 @@ limits:
   max_session_minutes: 30
   max_tool_calls: 200
   max_spend_usd: 0.50
+  spend_warning_pct: 75      # non-blocking warning before the hard limit
 
 dangerous_bash_patterns:
   - "rm -rf"
   - "sudo rm"
+
+dangerous_regex_patterns:
+  - "drop\\s+table"
+
+protected_paths:
+  - ".env"
+  - ".ssh/"
 
 alerts:
   slack_webhook_url: "https://hooks.slack.com/..."
@@ -95,6 +108,9 @@ blackbox sessions              # list recent sessions with spend
 blackbox replay <session_id>   # frame-by-frame replay of one session
 blackbox flags                 # everything that got flagged or blocked
 blackbox stats                 # totals across all sessions
+blackbox verify                # confirm the audit log hasn't been tampered with
+blackbox export <session_id>   # export one session's full trail as CSV
+blackbox report --days 30      # markdown compliance summary for a date range
 ```
 
 ## Why this exists
