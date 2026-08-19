@@ -2,10 +2,17 @@
 This is the same rules/logging engine used by the Claude Code hooks,
 just exposed as plain Python functions instead of stdin/JSON scripts."""
 
+import re
 import datetime
-from blackbox.db import get_conn
+from blackbox.db import get_conn, get_last_event_hash
 from blackbox.config import load_config
 from blackbox.alert import send_alert
+from blackbox.hashchain import compute_hash
+
+# Tool-name aliases so the same rules apply whether you're on Claude Code
+# ("Bash", "Write") or the LangChain/custom-agent path ("run_bash", "write_file").
+BASH_TOOL_NAMES = {"Bash", "run_bash"}
+FILE_PATH_FIELDS = ["file_path", "path", "notebook_path"]
 
 
 def start_session(session_id: str, cwd: str = ""):
@@ -37,15 +44,25 @@ def end_session(session_id: str):
     conn.close()
 
 
-def log_event(session_id: str, tool_name: str, tool_input: str, tool_output: str, decision: str = "allow"):
-    conn = get_conn()
+def _insert_event_with_hash(conn, session_id, hook_event, tool_name, tool_input, tool_output, decision, cost_usd=0):
+    timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    tool_input_str = str(tool_input)[:2000]
+    tool_output_str = str(tool_output)[:2000]
+    prev_hash = get_last_event_hash(conn)
+    row_hash = compute_hash(prev_hash, session_id, timestamp, hook_event, tool_name, tool_input_str, tool_output_str, decision)
     conn.execute(
-        "INSERT INTO events (session_id, timestamp, hook_event, tool_name, tool_input, tool_output, decision) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (session_id, datetime.datetime.now(datetime.timezone.utc).isoformat(), "ToolCall",
-         tool_name, str(tool_input)[:2000], str(tool_output)[:2000], decision),
+        "INSERT INTO events (session_id, timestamp, hook_event, tool_name, tool_input, tool_output, decision, "
+        "cost_usd, prev_hash, row_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (session_id, timestamp, hook_event, tool_name, tool_input_str, tool_output_str, decision,
+         cost_usd, prev_hash, row_hash),
     )
     conn.commit()
+    return row_hash
+
+
+def log_event(session_id: str, tool_name: str, tool_input, tool_output, decision: str = "allow"):
+    conn = get_conn()
+    _insert_event_with_hash(conn, session_id, "ToolCall", tool_name, tool_input, tool_output, decision)
     conn.close()
 
 
@@ -58,13 +75,8 @@ def log_model_usage(session_id: str, prompt_tokens: int, completion_tokens: int)
         + (completion_tokens / 1_000_000) * pricing.get("output_per_million_usd", 0)
     )
     conn = get_conn()
-    conn.execute(
-        "INSERT INTO events (session_id, timestamp, hook_event, tool_name, tool_input, tool_output, decision, cost_usd) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (session_id, datetime.datetime.now(datetime.timezone.utc).isoformat(), "ModelUsage", "__llm_call__",
-         f'{{"prompt_tokens": {prompt_tokens}, "completion_tokens": {completion_tokens}}}', "", "n/a", cost),
-    )
-    conn.commit()
+    tool_input = f'{{"prompt_tokens": {prompt_tokens}, "completion_tokens": {completion_tokens}}}'
+    _insert_event_with_hash(conn, session_id, "ModelUsage", "__llm_call__", tool_input, "", "n/a", cost_usd=cost)
     conn.close()
     return cost
 
@@ -78,19 +90,6 @@ def get_session_cost(session_id: str) -> float:
     return total or 0.0
 
 
-def check_spend_limit(session_id: str):
-    """Returns (ok: bool, reason: str). Call this before running the next tool call."""
-    cfg = load_config()
-    max_spend = cfg.get("limits", {}).get("max_spend_usd", 0.50)
-    spent = get_session_cost(session_id)
-    if spent >= max_spend:
-        msg = f"Session has spent ${spent:.4f}, exceeding limit of ${max_spend:.2f}."
-        _record_flag(session_id, "max_spend", "block", msg)
-        send_alert(f"Session {session_id[:8]} hit its spend limit (${spent:.4f}) and was stopped.")
-        return False, msg
-    return True, ""
-
-
 def _record_flag(session_id: str, rule_name: str, severity: str, message: str):
     conn = get_conn()
     conn.execute(
@@ -101,8 +100,57 @@ def _record_flag(session_id: str, rule_name: str, severity: str, message: str):
     conn.close()
 
 
+def _already_warned(session_id: str, rule_name: str) -> bool:
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT 1 FROM flags WHERE session_id = ? AND rule_name = ? LIMIT 1", (session_id, rule_name)
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def check_budget_warning(session_id: str, spent: float, max_spend: float, warning_pct: int):
+    """Fires ONE warning alert (not a block) when spend first crosses warning_pct of the
+    limit. Deduped so it doesn't spam on every subsequent tool call."""
+    if max_spend <= 0 or warning_pct <= 0:
+        return
+    threshold = max_spend * (warning_pct / 100.0)
+    rule_name = f"budget_warning_{warning_pct}pct"
+    if spent >= threshold and not _already_warned(session_id, rule_name):
+        msg = f"Session has spent ${spent:.4f}, crossing {warning_pct}% of the ${max_spend:.2f} limit."
+        _record_flag(session_id, rule_name, "warn", msg)
+        send_alert(f"Budget warning: session {session_id[:8]} is at {warning_pct}% of its spend limit (${spent:.4f} of ${max_spend:.2f}).")
+
+
+def check_spend_limit(session_id: str):
+    """Returns (ok: bool, reason: str). Call this before running the next tool call."""
+    cfg = load_config()
+    limits = cfg.get("limits", {})
+    max_spend = limits.get("max_spend_usd", 0.50)
+    warning_pct = limits.get("spend_warning_pct", 75)
+    spent = get_session_cost(session_id)
+
+    check_budget_warning(session_id, spent, max_spend, warning_pct)
+
+    if spent >= max_spend:
+        msg = f"Session has spent ${spent:.4f}, exceeding limit of ${max_spend:.2f}."
+        _record_flag(session_id, "max_spend", "block", msg)
+        send_alert(f"Session {session_id[:8]} hit its spend limit (${spent:.4f}) and was stopped.")
+        return False, msg
+    return True, ""
+
+
+def _extract_path(tool_input: dict):
+    for field in FILE_PATH_FIELDS:
+        if field in tool_input:
+            return str(tool_input[field])
+    return None
+
+
 def check_guard(session_id: str, tool_name: str, tool_input: dict):
-    """Returns (allowed: bool, reason: str). Call this BEFORE running a tool."""
+    """Returns (allowed: bool, reason: str). Call this BEFORE running a tool.
+    This is the single shared rule engine used by both the Claude Code hooks
+    and the LangChain/custom-agent integration."""
     cfg = load_config()
 
     # Rule 1: hard-blocked tools
@@ -112,20 +160,60 @@ def check_guard(session_id: str, tool_name: str, tool_input: dict):
         send_alert(f"Blocked tool call `{tool_name}` in session {session_id[:8]}.")
         return False, msg
 
-    # Rule 2: dangerous Bash patterns
-    if tool_name == "run_bash":
+    # Rule 2: dangerous Bash patterns (substring) + regex patterns
+    if tool_name in BASH_TOOL_NAMES:
         command = tool_input.get("command", "")
         for pattern in cfg.get("dangerous_bash_patterns", []):
-            if pattern in command:
+            if pattern.lower() in command.lower():
                 msg = f"Command matched dangerous pattern: '{pattern}'"
                 _record_flag(session_id, "dangerous_bash", "block", msg)
                 send_alert(f"Blocked dangerous command in session {session_id[:8]}: `{command[:100]}`")
                 return False, msg
+        for regex in cfg.get("dangerous_regex_patterns", []):
+            try:
+                if re.search(regex, command, re.IGNORECASE):
+                    msg = f"Command matched dangerous pattern (regex): '{regex}'"
+                    _record_flag(session_id, "dangerous_bash_regex", "block", msg)
+                    send_alert(f"Blocked dangerous command in session {session_id[:8]}: `{command[:100]}`")
+                    return False, msg
+            except re.error:
+                continue  # a malformed regex in config shouldn't crash the guard
 
-    # Rule 3: too many tool calls this session
+        # Rule 2b: protected paths, checked as a substring against the raw command too
+        # (covers things like `cat .env` or `rm .ssh/id_rsa` that aren't in file-path fields)
+        for protected in cfg.get("protected_paths", []):
+            if protected.lower() in command.lower():
+                msg = f"Command touches a protected path: '{protected}'"
+                _record_flag(session_id, "protected_path", "block", msg)
+                send_alert(f"Blocked command touching protected path in session {session_id[:8]}: `{command[:100]}`")
+                return False, msg
+
+    # Rule 3: path-based guardrails for file tools (Write/Edit/Read/write_file/read_file/...)
+    path = _extract_path(tool_input)
+    if path:
+        for protected in cfg.get("protected_paths", []):
+            if protected.lower() in path.lower():
+                msg = f"Path '{path}' matches protected path pattern: '{protected}'"
+                _record_flag(session_id, "protected_path", "block", msg)
+                send_alert(f"Blocked file access to protected path in session {session_id[:8]}: `{path}`")
+                return False, msg
+
+    # Rule 4: spend limit (block) + budget warning (non-blocking, fires once)
+    limits = cfg.get("limits", {})
+    max_spend = limits.get("max_spend_usd", 0.50)
+    warning_pct = limits.get("spend_warning_pct", 75)
+    spent = get_session_cost(session_id)
+    check_budget_warning(session_id, spent, max_spend, warning_pct)
+    if spent >= max_spend:
+        msg = f"Session has spent ${spent:.4f}, exceeding limit of ${max_spend:.2f}."
+        _record_flag(session_id, "max_spend", "block", msg)
+        send_alert(f"Session {session_id[:8]} hit its spend limit (${spent:.4f}) and was stopped.")
+        return False, msg
+
+    # Rule 5: too many tool calls this session
     conn = get_conn()
     count = conn.execute("SELECT COUNT(*) FROM events WHERE session_id = ?", (session_id,)).fetchone()[0]
-    max_calls = cfg.get("limits", {}).get("max_tool_calls", 200)
+    max_calls = limits.get("max_tool_calls", 200)
     if count >= max_calls:
         msg = f"Session has made {count} tool calls, exceeding limit of {max_calls}."
         _record_flag(session_id, "max_tool_calls", "block", msg)
@@ -133,20 +221,20 @@ def check_guard(session_id: str, tool_name: str, tool_input: dict):
         conn.close()
         return False, msg
 
-    # Rule 4: session running too long
+    # Rule 6: session running too long
     row = conn.execute("SELECT started_at FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
     conn.close()
     if row:
         started_at = datetime.datetime.fromisoformat(row[0])
         elapsed_minutes = (datetime.datetime.now(datetime.timezone.utc) - started_at).total_seconds() / 60
-        max_minutes = cfg.get("limits", {}).get("max_session_minutes", 30)
+        max_minutes = limits.get("max_session_minutes", 30)
         if elapsed_minutes >= max_minutes:
             msg = f"Session has run {elapsed_minutes:.1f} min, exceeding limit of {max_minutes} min."
             _record_flag(session_id, "max_session_time", "block", msg)
             send_alert(f"Session {session_id[:8]} exceeded time limit and was stopped.")
             return False, msg
 
-    # Rule 5: off-path tool (warn only, don't block)
+    # Rule 7: off-path tool (warn only, don't block)
     allowed = cfg.get("allowed_tools", [])
     if allowed and tool_name not in allowed:
         msg = f"Tool '{tool_name}' is outside the normal allowed set."
@@ -154,3 +242,29 @@ def check_guard(session_id: str, tool_name: str, tool_input: dict):
         send_alert(f"Off-path tool `{tool_name}` used in session {session_id[:8]} (allowed, just flagged).")
 
     return True, ""
+
+
+def verify_chain():
+    """Recomputes the entire event hash chain from scratch. Returns (intact: bool, message: str)."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT event_id, session_id, timestamp, hook_event, tool_name, tool_input, tool_output, "
+        "decision, prev_hash, row_hash FROM events ORDER BY event_id ASC"
+    ).fetchall()
+    conn.close()
+
+    expected_prev = ""
+    for row in rows:
+        (event_id, session_id, timestamp, hook_event, tool_name, tool_input,
+         tool_output, decision, stored_prev, stored_hash) = row
+
+        if stored_prev != expected_prev:
+            return False, f"Chain broken at event_id={event_id}: prev_hash doesn't match the prior row's hash."
+
+        recomputed = compute_hash(stored_prev, session_id, timestamp, hook_event, tool_name, tool_input, tool_output, decision)
+        if recomputed != stored_hash:
+            return False, f"Chain broken at event_id={event_id}: stored hash doesn't match recomputed hash (row was likely edited)."
+
+        expected_prev = stored_hash
+
+    return True, f"Chain intact. {len(rows)} events verified."

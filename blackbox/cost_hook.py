@@ -13,6 +13,7 @@ sys.path.insert(0, os.environ.get("CLAUDE_PROJECT_DIR", os.path.dirname(os.path.
 from blackbox.db import get_conn
 from blackbox.config import load_config
 from blackbox.alert import send_alert
+from blackbox.core import check_budget_warning
 
 
 def price_for_model(model_name: str, pricing_table: dict) -> dict:
@@ -27,7 +28,6 @@ def price_for_model(model_name: str, pricing_table: dict) -> dict:
 def compute_cost_from_transcript(transcript_path: str, pricing_table: dict):
     """Returns (total_cost_usd, total_input_tokens, total_output_tokens)."""
     total_cost = 0.0
-    
     total_in = 0
     total_out = 0
 
@@ -96,6 +96,9 @@ def main():
     conn.commit()
 
     max_spend = cfg.get("limits", {}).get("max_spend_usd", 999999)
+    warning_pct = cfg.get("limits", {}).get("spend_warning_pct", 75)
+    check_budget_warning(session_id, cost, max_spend, warning_pct)
+
     if cost >= max_spend:
         conn.execute(
             "INSERT INTO flags (session_id, rule_name, severity, message, timestamp) VALUES (?, ?, ?, ?, ?)",
