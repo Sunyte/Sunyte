@@ -16,7 +16,7 @@ import subprocess
 from groq import Groq
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from blackbox.core import start_session, end_session, log_event, check_guard, log_model_usage, check_spend_limit, get_session_cost
+from blackbox.core import start_session, end_session, log_event, log_user_prompt, check_guard, log_model_usage, check_spend_limit, get_session_cost
 
 MODEL = "openai/gpt-oss-120b"
 SANDBOX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sandbox")
@@ -103,6 +103,7 @@ def main():
     client = Groq(api_key=api_key)
     session_id = str(uuid.uuid4())
     start_session(session_id, cwd=SANDBOX)
+    log_user_prompt(session_id, task)
     print(f"[session {session_id[:8]}] starting: {task}\n")
 
     messages = [
@@ -116,7 +117,7 @@ def main():
         msg = response.choices[0].message
 
         usage = response.usage
-        call_cost = log_model_usage(session_id, usage.prompt_tokens, usage.completion_tokens)
+        call_cost = log_model_usage(session_id, usage.prompt_tokens, usage.completion_tokens, model=MODEL)
         running_total = get_session_cost(session_id)
         print(f"[usage] +${call_cost:.5f} this call, ${running_total:.5f} total this session")
 
@@ -142,7 +143,6 @@ def main():
 
             if not allowed:
                 print(f"[BLOCKED] {tool_name}({tool_input}) -> {reason}")
-                log_event(session_id, tool_name, tool_input, f"BLOCKED: {reason}", decision="block")
                 result = f"This action was blocked by the black-box safety layer: {reason}"
             else:
                 print(f"[run] {tool_name}({tool_input})")

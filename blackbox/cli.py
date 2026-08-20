@@ -3,7 +3,8 @@
 
 Usage:
   blackbox sessions                    # list recent sessions
-  blackbox replay <session_id>         # frame-by-frame replay
+  blackbox replay <session_id>         # human-readable timeline replay
+  blackbox replay <session_id> --raw   # old raw per-field dump
   blackbox flags [session_id]          # show flagged/blocked events
   blackbox stats                       # total spend + call counts across all sessions
   blackbox verify                      # check the tamper-evident log chain is intact
@@ -12,9 +13,12 @@ Usage:
 """
 import sys
 import csv
+import json
+import ast
 import datetime
 from blackbox.db import get_conn
 from blackbox.core import verify_chain
+from blackbox.config import load_config
 
 
 def list_sessions():
@@ -31,19 +35,121 @@ def list_sessions():
         print(f"{r[0][:12]}  started={r[1]}  ended={r[2]}  status={r[3]}  spend=${cost:.5f}")
 
 
-def replay(session_id):
+def _local_time(iso_ts: str) -> str:
+    try:
+        dt = datetime.datetime.fromisoformat(iso_ts)
+        return dt.astimezone().strftime("%H:%M:%S")
+    except (ValueError, TypeError):
+        return iso_ts or "??:??:??"
+
+
+def _try_parse(raw):
+    """tool_input is stored as either a JSON string (Claude Code path) or a
+    Python dict repr (str(dict) from the LangChain/custom-agent path).
+    Try both so humanization works regardless of which source logged it."""
+    if not raw:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        pass
+    try:
+        parsed = ast.literal_eval(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except (ValueError, SyntaxError):
+        return {}
+
+
+_READ_TOOLS = {"Read", "read_file"}
+_WRITE_TOOLS = {"Write", "write_file"}
+_EDIT_TOOLS = {"Edit", "MultiEdit"}
+_BASH_TOOLS = {"Bash", "run_bash"}
+
+
+def _humanize(row, alerts_enabled: bool):
+    """Returns a list of lines (strings) describing one event, formatted
+    like: '02:03:14  Read package.json'."""
+    _, hook_event, tool_name, tool_input_raw, tool_output_raw, decision = row
+    time_str = _local_time(row[0])
+    lines = []
+
+    if hook_event == "UserPrompt":
+        prompt_text = (tool_output_raw or "").strip()
+        if len(prompt_text) > 100:
+            prompt_text = prompt_text[:100] + "..."
+        lines.append(f'{time_str}  Prompt: "{prompt_text}"')
+        return lines
+
+    if hook_event == "ModelUsage":
+        parsed = _try_parse(tool_input_raw)
+        model = parsed.get("model", "")
+        label = f"Called {model} API" if model else "Called LLM API"
+        lines.append(f"{time_str}  {label}")
+        return lines
+
+    parsed_input = _try_parse(tool_input_raw)
+    path = parsed_input.get("file_path") or parsed_input.get("path") or parsed_input.get("notebook_path")
+    command = parsed_input.get("command")
+
+    if decision == "block":
+        target = command or path or tool_name
+        lines.append(f"{time_str}  Agent attempted:")
+        lines.append(f"           {target}")
+        lines.append(f"           \U0001F6AB BLOCKED")
+        if alerts_enabled:
+            lines.append(f"{time_str}  Slack alert sent")
+        return lines
+
+    if tool_name in _READ_TOOLS:
+        lines.append(f"{time_str}  Read {path or '(unknown path)'}")
+    elif tool_name in _EDIT_TOOLS:
+        lines.append(f"{time_str}  Modified {path or '(unknown path)'}")
+    elif tool_name in _WRITE_TOOLS:
+        lines.append(f"{time_str}  Wrote {path or '(unknown path)'}")
+    elif tool_name in _BASH_TOOLS:
+        cmd_display = (command or "").strip()
+        if len(cmd_display) > 60:
+            cmd_display = cmd_display[:60] + "..."
+        lines.append(f"{time_str}  Executed {cmd_display}")
+    else:
+        lines.append(f"{time_str}  Called {tool_name}")
+
+    return lines
+
+
+def replay(session_id, raw=False):
     conn = get_conn()
+    session_row = conn.execute(
+        "SELECT session_id, started_at FROM sessions WHERE session_id LIKE ? LIMIT 1", (session_id + "%",)
+    ).fetchone()
     rows = conn.execute(
-        "SELECT timestamp, hook_event, tool_name, tool_input, decision FROM events "
+        "SELECT timestamp, hook_event, tool_name, tool_input, tool_output, decision FROM events "
         "WHERE session_id LIKE ? ORDER BY timestamp ASC",
         (session_id + "%",),
     ).fetchall()
     conn.close()
-    if not rows:
-        print("No events found for that session id (try a shorter prefix).")
+    if not rows and not session_row:
+        print("No session found for that id (try a shorter prefix).")
         return
-    for i, r in enumerate(rows, 1):
-        print(f"[{i}] {r[0]}  {r[2]}  decision={r[4]}\n    input={r[3][:200]}\n")
+
+    if raw:
+        for i, r in enumerate(rows, 1):
+            print(f"[{i}] {r[0]}  {r[2]}  decision={r[5]}\n    input={r[3][:200]}\n")
+        return
+
+    cfg = load_config()
+    alerts_enabled = cfg.get("alerts", {}).get("enabled", False)
+
+    full_id = session_row[0] if session_row else session_id
+    print(f"SESSION {full_id}")
+    if session_row:
+        print(f"{_local_time(session_row[1])}  Agent started")
+
+    for row in rows:
+        for line in _humanize(row, alerts_enabled):
+            print(line)
 
 
 def flags(session_id=None):
@@ -175,7 +281,7 @@ def main():
     if cmd == "sessions":
         list_sessions()
     elif cmd == "replay" and len(sys.argv) > 2:
-        replay(sys.argv[2])
+        replay(sys.argv[2], raw=("--raw" in sys.argv))
     elif cmd == "flags":
         flags(sys.argv[2] if len(sys.argv) > 2 else None)
     elif cmd == "stats":

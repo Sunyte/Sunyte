@@ -22,12 +22,14 @@ class BlackBoxCallbackHandler(BaseCallbackHandler):
     def on_llm_end(self, response, **kwargs):
         try:
             usage = {}
+            model = ""
             if response.llm_output:
                 usage = response.llm_output.get("token_usage", {}) or response.llm_output.get("usage", {})
+                model = response.llm_output.get("model_name", "") or response.llm_output.get("model", "")
             prompt_tokens = usage.get("prompt_tokens", 0)
             completion_tokens = usage.get("completion_tokens", 0)
             if prompt_tokens or completion_tokens:
-                log_model_usage(self.session_id, prompt_tokens, completion_tokens)
+                log_model_usage(self.session_id, prompt_tokens, completion_tokens, model=model)
 
             ok, reason = check_spend_limit(self.session_id)
             if not ok:

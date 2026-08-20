@@ -1,10 +1,11 @@
 # agent-blackbox config
-# Edit these values to set your own limits. No restart needed — read fresh each hook call.
+# Edit these values to set your own limits. No restart needed — read fresh each check.
 
 limits:
   max_session_minutes: 30      # flag if a session runs longer than this
   max_tool_calls: 200          # flag if a session makes more than this many tool calls
-  max_spend_usd: 0.50          # kill the session if it spends more than this
+  max_spend_usd: 0.01          # kill switch: stop the session if it spends more than this
+  spend_warning_pcts: [50, 75, 90]   # send a non-blocking WARNING alert at each of these % of max_spend_usd
 
 # Groq pricing for openai/gpt-oss-120b (per Groq's published rates, verified Aug 2026)
 pricing:
@@ -17,15 +18,7 @@ claude_pricing:
   sonnet-5:   {input: 2.00, output: 10.00, cache_write: 2.50, cache_read: 0.20}
   opus-4-8:   {input: 5.00, output: 25.00, cache_write: 6.25, cache_read: 0.50}
   haiku-4-5:  {input: 1.00, output: 5.00,  cache_write: 1.25, cache_read: 0.10}
-  # fallback if the model isn't recognized above
   default:    {input: 3.00, output: 15.00, cache_write: 3.75, cache_read: 0.30}
-  max_spend_usd: 0.50          # kill switch: stop the session if it spends more than this
-
-# Pricing for cost calculation. Defaults match Groq's openai/gpt-oss-120b as of Aug 2026.
-# Update these if you switch models -- check console.groq.com/docs/models for current rates.
-pricing:
-  input_per_million_usd: 0.15
-  output_per_million_usd: 0.60
 
 # Tools NOT in this list will be flagged as "off-path" (warn only, not blocked, by default)
 allowed_tools:
@@ -37,13 +30,62 @@ allowed_tools:
 blocked_tools: []
 # Example: blocked_tools: ["Bash"]   # uncomment to hard-block all shell commands
 
-# Bash commands containing these substrings are always blocked (simple deny-list to start)
+# Simple substring match against the full bash command. Case-insensitive.
+# Expanded to cover common real-world agent disasters, not just filesystem wipes.
 dangerous_bash_patterns:
+  # destructive filesystem
   - "rm -rf"
   - "sudo rm"
-  - ":(){ :|:& };:"   # fork bomb
+  - ":(){ :|:& };:"        # fork bomb
   - "mkfs"
   - "> /dev/sda"
+  - "> /dev/disk"
+  - "chmod -R 777"
+  - "chmod 777 /"
+  # supply-chain / remote code execution
+  - "curl | bash"
+  - "curl | sh"
+  - "wget | bash"
+  - "wget | sh"
+  - "curl -s | bash"
+  # git disasters
+  - "git push --force"
+  - "git push -f"
+  - "git reset --hard"
+  - "git clean -fdx"
+  # cloud destructive operations
+  - "aws s3 rm --recursive"
+  - "aws s3api delete-bucket"
+  - "gcloud sql instances delete"
+  - "gcloud compute instances delete"
+  - "az vm delete"
+  - "kubectl delete namespace"
+  - "terraform destroy"
+  # secrets / credentials
+  - "cat /etc/shadow"
+  - ".ssh/id_rsa"
+
+# Regex patterns for cases a simple substring can't catch cleanly
+# (e.g. "DELETE FROM x WHERE y" is fine, "DELETE FROM x" alone is not).
+# Matched case-insensitively against the full command/query text.
+dangerous_regex_patterns:
+  - "drop\\s+table"
+  - "delete\\s+from\\s+\\w+\\s*(;|$)"     # DELETE FROM table with no WHERE clause
+  - "truncate\\s+table"
+  - "update\\s+\\w+\\s+set\\s+.*(;|$)(?!.*where)"  # UPDATE ... SET with no WHERE
+
+# Paths that should never be written to, deleted, or executed against,
+# regardless of which tool is used. Matched as a substring against any
+# file path or bash command.
+protected_paths:
+  - ".git/"
+  - ".env"
+  - ".ssh/"
+  - "id_rsa"
+  - "node_modules/.bin"
+  - "/etc/"
+  - "/System/"
+  - "C:\\Windows\\System32"
 
 alerts:
   slack_webhook_url: ""   # paste your Slack incoming webhook URL here

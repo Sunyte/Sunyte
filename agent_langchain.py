@@ -22,7 +22,7 @@ from langchain_groq import ChatGroq
 
 from blackbox.langchain_guard import black_box_tool, set_current_session
 from blackbox.langchain_handler import BlackBoxCallbackHandler
-from blackbox.core import start_session, end_session
+from blackbox.core import start_session, end_session, log_user_prompt
 
 MODEL = "openai/gpt-oss-120b"
 SANDBOX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sandbox")
@@ -93,6 +93,7 @@ def main():
     session_id = str(uuid.uuid4())
     set_current_session(session_id)          # <- tools now log/guard against this session
     start_session(session_id, cwd=SANDBOX)
+    log_user_prompt(session_id, task)
     handler = BlackBoxCallbackHandler(session_id)   # <- tracks cost per LLM call
     print(f"[session {session_id[:8]}] starting: {task}\n")
 

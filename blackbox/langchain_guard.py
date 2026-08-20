@@ -46,7 +46,6 @@ def black_box_tool(session_id_getter=get_current_session):
 
             allowed, reason = check_guard(session_id, tool_name, tool_input)
             if not allowed:
-                log_event(session_id, tool_name, tool_input, f"BLOCKED: {reason}", decision="block")
                 return f"This action was blocked by agent-blackbox: {reason}"
 
             result = func(*args, **kwargs)

@@ -3,6 +3,7 @@ This is the same rules/logging engine used by the Claude Code hooks,
 just exposed as plain Python functions instead of stdin/JSON scripts."""
 
 import re
+import json
 import datetime
 from blackbox.db import get_conn, get_last_event_hash
 from blackbox.config import load_config
@@ -66,7 +67,15 @@ def log_event(session_id: str, tool_name: str, tool_input, tool_output, decision
     conn.close()
 
 
-def log_model_usage(session_id: str, prompt_tokens: int, completion_tokens: int) -> float:
+def log_user_prompt(session_id: str, prompt_text: str):
+    """Logs the actual human prompt that triggered a turn/session, so replay
+    can show WHY the agent did what it did, not just what it did."""
+    conn = get_conn()
+    _insert_event_with_hash(conn, session_id, "UserPrompt", "prompt", "", prompt_text, "n/a")
+    conn.close()
+
+
+def log_model_usage(session_id: str, prompt_tokens: int, completion_tokens: int, model: str = "") -> float:
     """Records one LLM call's token usage and cost. Returns the cost of this call in USD."""
     cfg = load_config()
     pricing = cfg.get("pricing", {})
@@ -75,7 +84,7 @@ def log_model_usage(session_id: str, prompt_tokens: int, completion_tokens: int)
         + (completion_tokens / 1_000_000) * pricing.get("output_per_million_usd", 0)
     )
     conn = get_conn()
-    tool_input = f'{{"prompt_tokens": {prompt_tokens}, "completion_tokens": {completion_tokens}}}'
+    tool_input = json.dumps({"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "model": model})
     _insert_event_with_hash(conn, session_id, "ModelUsage", "__llm_call__", tool_input, "", "n/a", cost_usd=cost)
     conn.close()
     return cost
@@ -109,17 +118,36 @@ def _already_warned(session_id: str, rule_name: str) -> bool:
     return row is not None
 
 
-def check_budget_warning(session_id: str, spent: float, max_spend: float, warning_pct: int):
-    """Fires ONE warning alert (not a block) when spend first crosses warning_pct of the
-    limit. Deduped so it doesn't spam on every subsequent tool call."""
-    if max_spend <= 0 or warning_pct <= 0:
+def _get_warning_pcts(cfg) -> list:
+    """Reads the multi-tier warning list from config. Falls back to wrapping
+    the old single 'spend_warning_pct' value for backward compatibility with
+    configs written before this was a list."""
+    limits = cfg.get("limits", {})
+    if "spend_warning_pcts" in limits:
+        return sorted(set(limits["spend_warning_pcts"]))
+    if "spend_warning_pct" in limits:
+        return [limits["spend_warning_pct"]]
+    return [50, 75, 90]
+
+
+def check_budget_warning(session_id: str, spent: float, max_spend: float, warning_pcts):
+    """Fires ONE warning alert per threshold (not a block) as spend crosses
+    each configured percentage of the limit. Deduped per-threshold so it
+    doesn't re-fire or spam on every subsequent tool call. Accepts either a
+    single int (legacy) or a list of ints (multi-tier)."""
+    if max_spend <= 0:
         return
-    threshold = max_spend * (warning_pct / 100.0)
-    rule_name = f"budget_warning_{warning_pct}pct"
-    if spent >= threshold and not _already_warned(session_id, rule_name):
-        msg = f"Session has spent ${spent:.4f}, crossing {warning_pct}% of the ${max_spend:.2f} limit."
-        _record_flag(session_id, rule_name, "warn", msg)
-        send_alert(f"Budget warning: session {session_id[:8]} is at {warning_pct}% of its spend limit (${spent:.4f} of ${max_spend:.2f}).")
+    if isinstance(warning_pcts, (int, float)):
+        warning_pcts = [warning_pcts]
+    for pct in warning_pcts:
+        if pct <= 0:
+            continue
+        threshold = max_spend * (pct / 100.0)
+        rule_name = f"budget_warning_{pct}pct"
+        if spent >= threshold and not _already_warned(session_id, rule_name):
+            msg = f"Session has spent ${spent:.4f}, crossing {pct}% of the ${max_spend:.2f} limit."
+            _record_flag(session_id, rule_name, "warn", msg)
+            send_alert(f"Budget warning: session {session_id[:8]} is at {pct}% of its spend limit (${spent:.4f} of ${max_spend:.2f}).")
 
 
 def check_spend_limit(session_id: str):
@@ -127,10 +155,10 @@ def check_spend_limit(session_id: str):
     cfg = load_config()
     limits = cfg.get("limits", {})
     max_spend = limits.get("max_spend_usd", 0.50)
-    warning_pct = limits.get("spend_warning_pct", 75)
+    warning_pcts = _get_warning_pcts(cfg)
     spent = get_session_cost(session_id)
 
-    check_budget_warning(session_id, spent, max_spend, warning_pct)
+    check_budget_warning(session_id, spent, max_spend, warning_pcts)
 
     if spent >= max_spend:
         msg = f"Session has spent ${spent:.4f}, exceeding limit of ${max_spend:.2f}."
@@ -147,6 +175,16 @@ def _extract_path(tool_input: dict):
     return None
 
 
+def _deny(session_id, tool_name, tool_input, msg, rule_name, alert_msg):
+    """Shared denial path: records the flag, logs the ATTEMPT itself into the
+    events table (so it shows up inline in replay, not just in `flags`),
+    sends the alert, and returns the (False, reason) tuple."""
+    _record_flag(session_id, rule_name, "block", msg)
+    log_event(session_id, tool_name, tool_input, f"BLOCKED: {msg}", decision="block")
+    send_alert(alert_msg)
+    return False, msg
+
+
 def check_guard(session_id: str, tool_name: str, tool_input: dict):
     """Returns (allowed: bool, reason: str). Call this BEFORE running a tool.
     This is the single shared rule engine used by both the Claude Code hooks
@@ -156,9 +194,8 @@ def check_guard(session_id: str, tool_name: str, tool_input: dict):
     # Rule 1: hard-blocked tools
     if tool_name in cfg.get("blocked_tools", []):
         msg = f"Tool '{tool_name}' is on the hard-blocked list."
-        _record_flag(session_id, "blocked_tool", "block", msg)
-        send_alert(f"Blocked tool call `{tool_name}` in session {session_id[:8]}.")
-        return False, msg
+        return _deny(session_id, tool_name, tool_input, msg, "blocked_tool",
+                     f"Blocked tool call `{tool_name}` in session {session_id[:8]}.")
 
     # Rule 2: dangerous Bash patterns (substring) + regex patterns
     if tool_name in BASH_TOOL_NAMES:
@@ -166,16 +203,14 @@ def check_guard(session_id: str, tool_name: str, tool_input: dict):
         for pattern in cfg.get("dangerous_bash_patterns", []):
             if pattern.lower() in command.lower():
                 msg = f"Command matched dangerous pattern: '{pattern}'"
-                _record_flag(session_id, "dangerous_bash", "block", msg)
-                send_alert(f"Blocked dangerous command in session {session_id[:8]}: `{command[:100]}`")
-                return False, msg
+                return _deny(session_id, tool_name, tool_input, msg, "dangerous_bash",
+                             f"Blocked dangerous command in session {session_id[:8]}: `{command[:100]}`")
         for regex in cfg.get("dangerous_regex_patterns", []):
             try:
                 if re.search(regex, command, re.IGNORECASE):
                     msg = f"Command matched dangerous pattern (regex): '{regex}'"
-                    _record_flag(session_id, "dangerous_bash_regex", "block", msg)
-                    send_alert(f"Blocked dangerous command in session {session_id[:8]}: `{command[:100]}`")
-                    return False, msg
+                    return _deny(session_id, tool_name, tool_input, msg, "dangerous_bash_regex",
+                                 f"Blocked dangerous command in session {session_id[:8]}: `{command[:100]}`")
             except re.error:
                 continue  # a malformed regex in config shouldn't crash the guard
 
@@ -184,9 +219,8 @@ def check_guard(session_id: str, tool_name: str, tool_input: dict):
         for protected in cfg.get("protected_paths", []):
             if protected.lower() in command.lower():
                 msg = f"Command touches a protected path: '{protected}'"
-                _record_flag(session_id, "protected_path", "block", msg)
-                send_alert(f"Blocked command touching protected path in session {session_id[:8]}: `{command[:100]}`")
-                return False, msg
+                return _deny(session_id, tool_name, tool_input, msg, "protected_path",
+                             f"Blocked command touching protected path in session {session_id[:8]}: `{command[:100]}`")
 
     # Rule 3: path-based guardrails for file tools (Write/Edit/Read/write_file/read_file/...)
     path = _extract_path(tool_input)
@@ -194,32 +228,29 @@ def check_guard(session_id: str, tool_name: str, tool_input: dict):
         for protected in cfg.get("protected_paths", []):
             if protected.lower() in path.lower():
                 msg = f"Path '{path}' matches protected path pattern: '{protected}'"
-                _record_flag(session_id, "protected_path", "block", msg)
-                send_alert(f"Blocked file access to protected path in session {session_id[:8]}: `{path}`")
-                return False, msg
+                return _deny(session_id, tool_name, tool_input, msg, "protected_path",
+                             f"Blocked file access to protected path in session {session_id[:8]}: `{path}`")
 
-    # Rule 4: spend limit (block) + budget warning (non-blocking, fires once)
+    # Rule 4: spend limit (block) + multi-tier budget warnings (non-blocking, fire once each)
     limits = cfg.get("limits", {})
     max_spend = limits.get("max_spend_usd", 0.50)
-    warning_pct = limits.get("spend_warning_pct", 75)
+    warning_pcts = _get_warning_pcts(cfg)
     spent = get_session_cost(session_id)
-    check_budget_warning(session_id, spent, max_spend, warning_pct)
+    check_budget_warning(session_id, spent, max_spend, warning_pcts)
     if spent >= max_spend:
         msg = f"Session has spent ${spent:.4f}, exceeding limit of ${max_spend:.2f}."
-        _record_flag(session_id, "max_spend", "block", msg)
-        send_alert(f"Session {session_id[:8]} hit its spend limit (${spent:.4f}) and was stopped.")
-        return False, msg
+        return _deny(session_id, tool_name, tool_input, msg, "max_spend",
+                     f"Session {session_id[:8]} hit its spend limit (${spent:.4f}) and was stopped.")
 
     # Rule 5: too many tool calls this session
     conn = get_conn()
     count = conn.execute("SELECT COUNT(*) FROM events WHERE session_id = ?", (session_id,)).fetchone()[0]
     max_calls = limits.get("max_tool_calls", 200)
     if count >= max_calls:
-        msg = f"Session has made {count} tool calls, exceeding limit of {max_calls}."
-        _record_flag(session_id, "max_tool_calls", "block", msg)
-        send_alert(f"Session {session_id[:8]} hit the tool-call limit ({count}) and was stopped.")
         conn.close()
-        return False, msg
+        msg = f"Session has made {count} tool calls, exceeding limit of {max_calls}."
+        return _deny(session_id, tool_name, tool_input, msg, "max_tool_calls",
+                     f"Session {session_id[:8]} hit the tool-call limit ({count}) and was stopped.")
 
     # Rule 6: session running too long
     row = conn.execute("SELECT started_at FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
@@ -230,9 +261,8 @@ def check_guard(session_id: str, tool_name: str, tool_input: dict):
         max_minutes = limits.get("max_session_minutes", 30)
         if elapsed_minutes >= max_minutes:
             msg = f"Session has run {elapsed_minutes:.1f} min, exceeding limit of {max_minutes} min."
-            _record_flag(session_id, "max_session_time", "block", msg)
-            send_alert(f"Session {session_id[:8]} exceeded time limit and was stopped.")
-            return False, msg
+            return _deny(session_id, tool_name, tool_input, msg, "max_session_time",
+                         f"Session {session_id[:8]} exceeded time limit and was stopped.")
 
     # Rule 7: off-path tool (warn only, don't block)
     allowed = cfg.get("allowed_tools", [])

@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PROJECT_DIR}/blackbox/prompt_hook.py"]
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "*",
