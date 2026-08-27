@@ -10,10 +10,10 @@ import json
 import datetime
 
 sys.path.insert(0, os.environ.get("CLAUDE_PROJECT_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from blackbox.db import get_conn
-from blackbox.config import load_config
-from blackbox.alert import send_alert
-from blackbox.core import check_budget_warning
+from sunyte.db import get_conn
+from sunyte.config import load_config
+from sunyte.alert import send_alert
+from sunyte.core import check_budget_warning
 
 
 def price_for_model(model_name: str, pricing_table: dict) -> dict:

@@ -16,7 +16,7 @@ import subprocess
 from groq import Groq
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from blackbox.core import start_session, end_session, log_event, log_user_prompt, check_guard, log_model_usage, check_spend_limit, get_session_cost
+from sunyte.core import start_session, end_session, log_event, log_user_prompt, check_guard, log_model_usage, check_spend_limit, get_session_cost
 
 MODEL = "openai/gpt-oss-120b"
 SANDBOX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sandbox")
@@ -143,7 +143,7 @@ def main():
 
             if not allowed:
                 print(f"[BLOCKED] {tool_name}({tool_input}) -> {reason}")
-                result = f"This action was blocked by the black-box safety layer: {reason}"
+                result = f"This action was blocked by the Sunyte safety layer: {reason}"
             else:
                 print(f"[run] {tool_name}({tool_input})")
                 func = TOOL_FUNCS.get(tool_name)

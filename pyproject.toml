@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-blackbox"
+name = "sunyte"
 version = "0.1.0"
-description = "A black box recorder for AI agents: logs every tool call, blocks dangerous actions, tracks spend, and alerts you when something goes wrong."
+description = "A flight recorder for AI agents: logs every tool call, blocks dangerous actions, tracks spend, and alerts you when something goes wrong."
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
@@ -18,7 +18,7 @@ groq = ["groq>=0.11,<1.0"]
 langchain = ["langchain-core>=0.3.33,<0.4.0", "langchain-groq>=0.2.4,<1.0"]
 
 [project.scripts]
-blackbox = "blackbox.cli:main"
+sunyte = "sunyte.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["blackbox*"]
+include = ["sunyte*"]

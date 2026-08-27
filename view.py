@@ -5,7 +5,7 @@
   python3 view.py flags [session_id]    # show flagged/blocked events
 """
 import sys
-from blackbox.db import get_conn
+from sunyte.db import get_conn
 
 
 def list_sessions():

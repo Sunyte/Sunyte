@@ -2,7 +2,7 @@
 
 Each event's hash is computed from its own content PLUS the previous
 event's hash. Editing or deleting any past row breaks every hash after
-it, which `blackbox verify` detects by recomputing the whole chain.
+it, which `sunyte verify` detects by recomputing the whole chain.
 """
 
 import hashlib

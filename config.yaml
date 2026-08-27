@@ -1,4 +1,4 @@
-# agent-blackbox config
+# Sunyte config
 # Edit these values to set your own limits. No restart needed — read fresh each check.
 
 limits:

@@ -1,6 +1,6 @@
-# agent-blackbox — Try it in 10 minutes
+# Sunyte — Try it in 10 minutes
 
-This walks you through installing agent-blackbox and watching it catch a
+This walks you through installing Sunyte and watching it catch a
 dangerous action in real time, before it executes.
 
 Pick whichever path matches how you actually work. Both take about the same
@@ -12,7 +12,7 @@ amount of time. You don't need to do both.
 
 ## What you're about to see
 
-An AI agent will try to run a destructive shell command. agent-blackbox will
+An AI agent will try to run a destructive shell command. Sunyte will
 catch it, block it *before it runs*, log the attempt, track what it cost,
 and ping Slack (if you set that up) — with a small, one-time setup, not a
 rewrite of how you already work.
@@ -24,7 +24,7 @@ rewrite of how you already work.
 Requires either a Claude subscription (Pro/Max/Team) or Anthropic API
 credits (console.anthropic.com, pay-as-you-go, no subscription needed).
 
-## A1. Copy the black box into your project
+## A1. Copy the Sunyte files into your project
 
 From this repo, copy the following into your own project's root folder:
 
@@ -32,7 +32,7 @@ From this repo, copy the following into your own project's root folder:
 your-project/
 ├── .claude/
 │   └── settings.json
-├── blackbox/
+├── sunyte/
 │   ├── __init__.py
 │   ├── db.py
 │   ├── config.py
@@ -166,7 +166,7 @@ Skip to **"Turn on Slack alerts"**, **"Audit & compliance commands"**, and
 
 ```bash
 git clone <this repo>   # or unzip what you were sent
-cd agent-blackbox
+cd sunyte
 pip install -e ".[langchain]"
 ```
 
@@ -194,8 +194,8 @@ python3 agent_langchain.py "Create a file called hello.txt with the text 'it wor
 
 Then check what got recorded:
 ```bash
-blackbox sessions
-blackbox replay <session_id_from_above>
+sunyte sessions
+sunyte replay <session_id_from_above>
 ```
 
 ## B5. Now try to break it
@@ -207,18 +207,18 @@ python3 agent_langchain.py "Run this exact shell command: sudo rm -rf /tmp/test"
 Expected:
 ```
 [run] run_bash({'command': 'sudo rm -rf /tmp/test'})
-      -> This action was blocked by agent-blackbox: Command matched dangerous pattern: 'rm -rf'
+      -> This action was blocked by Sunyte: Command matched dangerous pattern: 'rm -rf'
 ```
 
 Check the flag:
 ```bash
-blackbox flags
+sunyte flags
 ```
 
 ## B6. Check your spend
 
 ```bash
-blackbox stats
+sunyte stats
 ```
 
 ## Try it on your own LangChain tools
@@ -227,11 +227,11 @@ The entire integration for an existing LangChain tool is one decorator:
 
 ```python
 from langchain_core.tools import tool
-from blackbox.langchain_guard import black_box_tool, set_current_session
-from blackbox.core import start_session
+from sunyte.langchain_guard import sunyte_tool, set_current_session
+from sunyte.core import start_session
 
 @tool
-@black_box_tool()          # <- add this
+@sunyte_tool()          # <- add this
 def your_existing_tool(x: str) -> str:
     """Your existing docstring."""
     ...
@@ -264,9 +264,9 @@ silently:
 # Audit & compliance commands
 
 ```bash
-blackbox verify                # confirm the tamper-evident log chain is intact
-blackbox export <session_id>   # export one session's full audit trail as CSV
-blackbox report --days 30      # human-readable Markdown compliance summary
+sunyte verify                # confirm the tamper-evident log chain is intact
+sunyte export <session_id>   # export one session's full audit trail as CSV
+sunyte report --days 30      # human-readable Markdown compliance summary
 ```
 
 `verify` recomputes the hash chain across every logged event and tells you
@@ -305,20 +305,20 @@ python3 agent_langchain.py "task"        # LangChain + Groq agent
 /exit                                    # cleanly end the session
 
 # Viewing what got recorded
-python3 view.py sessions                 # or: blackbox sessions
-python3 view.py replay <session_id>      # or: blackbox replay <session_id>
-python3 view.py flags                    # or: blackbox flags
-blackbox stats                           # totals across all sessions (installed CLI only)
-blackbox verify                          # tamper-evidence check
-blackbox export <session_id>             # CSV export
-blackbox report --days 30                # Markdown compliance report
+python3 view.py sessions                 # or: sunyte sessions
+python3 view.py replay <session_id>      # or: sunyte replay <session_id>
+python3 view.py flags                    # or: sunyte flags
+sunyte stats                           # totals across all sessions (installed CLI only)
+sunyte verify                          # tamper-evidence check
+sunyte export <session_id>             # CSV export
+sunyte report --days 30                # Markdown compliance report
 ```
 
 ---
 
 # Something not working?
 
-- **"command not found: blackbox"** — the install didn't complete, or
+- **"command not found: sunyte"** — the install didn't complete, or
   you're in a different terminal/venv than the one you installed into.
   Re-run `pip install -e ".[langchain]"` in the terminal you're currently
   using, or just use `python3 view.py ...` instead.
@@ -340,8 +340,8 @@ blackbox report --days 30                # Markdown compliance report
 - **Nothing shows up in Slack** — double check `enabled: true` is actually
   set (not just the URL pasted in), and there's no trailing space in the
   webhook URL.
-- **`blackbox verify` reports tampering** — this means a row in
-  `blackbox.db` was edited or deleted after being logged. That's the
+- **`sunyte verify` reports tampering** — this means a row in
+  `sunyte.db` was edited or deleted after being logged. That's the
   feature working correctly, not a bug — investigate who/what touched the
   database file directly.
 

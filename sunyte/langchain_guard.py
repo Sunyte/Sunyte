@@ -2,11 +2,11 @@
 
 Usage in a real customer's codebase:
 
-    from blackbox.langchain_guard import black_box_tool, set_current_session
+    from sunyte.langchain_guard import sunyte_tool, set_current_session
     from langchain_core.tools import tool
 
     @tool
-    @black_box_tool()
+    @sunyte_tool()
     def my_existing_tool(x: str) -> str:
         '''Docstring LangChain uses for the tool description.'''
         ...
@@ -18,7 +18,7 @@ No fork, no framework replacement, no separate process.
 """
 
 import functools
-from blackbox.core import check_guard, log_event
+from sunyte.core import check_guard, log_event
 
 _current_session_id = {"value": "default-session"}
 
@@ -32,7 +32,7 @@ def get_current_session() -> str:
     return _current_session_id["value"]
 
 
-def black_box_tool(session_id_getter=get_current_session):
+def sunyte_tool(session_id_getter=get_current_session):
     """Decorator: wraps a tool function with a guard check (before) and
     a log entry (after). Must be applied UNDER @tool (i.e. closer to the
     function) so @tool sees a function with the correct signature/docstring."""
@@ -46,7 +46,7 @@ def black_box_tool(session_id_getter=get_current_session):
 
             allowed, reason = check_guard(session_id, tool_name, tool_input)
             if not allowed:
-                return f"This action was blocked by agent-blackbox: {reason}"
+                return f"This action was blocked by Sunyte: {reason}"
 
             result = func(*args, **kwargs)
             log_event(session_id, tool_name, tool_input, result, decision="allow")

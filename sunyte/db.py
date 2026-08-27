@@ -2,7 +2,7 @@ import os
 import sqlite3
 
 PROJECT_ROOT = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
-DB_PATH = os.path.join(PROJECT_ROOT, "blackbox.db")
+DB_PATH = os.path.join(PROJECT_ROOT, "sunyte.db")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (

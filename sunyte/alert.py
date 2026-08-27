@@ -1,5 +1,5 @@
 import requests
-from blackbox.config import load_config
+from sunyte.config import load_config
 
 
 def send_alert(message: str):
@@ -11,7 +11,7 @@ def send_alert(message: str):
     if not webhook:
         return
     try:
-        requests.post(webhook, json={"text": f":rotating_light: agent-blackbox: {message}"}, timeout=3)
+        requests.post(webhook, json={"text": f":rotating_light: Sunyte: {message}"}, timeout=3)
     except Exception:
         # never let an alert failure break the agent's actual work
         pass

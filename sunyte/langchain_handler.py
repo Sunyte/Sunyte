@@ -1,7 +1,7 @@
 """LangChain callback handler for cost tracking.
 
 Usage:
-    handler = BlackBoxCallbackHandler(session_id)
+    handler = SunyteCallbackHandler(session_id)
     llm.invoke(messages, config={"callbacks": [handler]})
 
 This is LangChain's own recommended extension mechanism (BaseCallbackHandler),
@@ -10,10 +10,10 @@ LangChain-compatible chat model, not just Groq.
 """
 
 from langchain_core.callbacks import BaseCallbackHandler
-from blackbox.core import log_model_usage, check_spend_limit
+from sunyte.core import log_model_usage, check_spend_limit
 
 
-class BlackBoxCallbackHandler(BaseCallbackHandler):
+class SunyteCallbackHandler(BaseCallbackHandler):
     def __init__(self, session_id: str):
         self.session_id = session_id
         self.killed = False

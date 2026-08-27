@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
-"""agent-blackbox CLI.
+"""Sunyte CLI.
 
 Usage:
-  blackbox sessions                    # list recent sessions
-  blackbox replay <session_id>         # human-readable timeline replay
-  blackbox replay <session_id> --raw   # old raw per-field dump
-  blackbox flags [session_id]          # show flagged/blocked events
-  blackbox stats                       # total spend + call counts across all sessions
-  blackbox verify                      # check the tamper-evident log chain is intact
-  blackbox export <session_id>         # export one session's full audit trail as CSV
-  blackbox report [--days N]           # human-readable compliance summary (default: 30 days)
+  sunyte sessions                    # list recent sessions
+  sunyte replay <session_id>         # human-readable timeline replay
+  sunyte replay <session_id> --raw   # old raw per-field dump
+  sunyte flags [session_id]          # show flagged/blocked events
+  sunyte stats                       # total spend + call counts across all sessions
+  sunyte verify                      # check the tamper-evident log chain is intact
+  sunyte export <session_id>         # export one session's full audit trail as CSV
+  sunyte report [--days N]           # human-readable compliance summary (default: 30 days)
 """
 import sys
 import csv
 import json
 import ast
 import datetime
-from blackbox.db import get_conn
-from blackbox.core import verify_chain
-from blackbox.config import load_config
+from sunyte.db import get_conn
+from sunyte.core import verify_chain
+from sunyte.config import load_config
 
 
 def list_sessions():
@@ -210,7 +210,7 @@ def export(session_id):
         print("No events found for that session id.")
         return
 
-    filename = f"blackbox_export_{session_id.replace('/', '_')}.csv"
+    filename = f"sunyte_export_{session_id.replace('/', '_')}.csv"
     with open(filename, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["event_id", "timestamp", "hook_event", "tool_name", "tool_input",
@@ -246,9 +246,9 @@ def report(days=30):
     warn_count = sum(1 for r in flag_rows if r[3] == "warn")
     intact, chain_msg = verify_chain()
 
-    filename = f"blackbox_report_{datetime.date.today().isoformat()}.md"
+    filename = f"sunyte_report_{datetime.date.today().isoformat()}.md"
     with open(filename, "w") as f:
-        f.write(f"# agent-blackbox audit report\n\n")
+        f.write(f"# Sunyte audit report\n\n")
         f.write(f"Generated: {datetime.datetime.now(datetime.timezone.utc).isoformat()}\n")
         f.write(f"Period: last {days} days\n\n")
         f.write(f"## Summary\n\n")

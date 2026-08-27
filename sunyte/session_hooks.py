@@ -8,7 +8,7 @@ import json
 import datetime
 
 sys.path.insert(0, os.environ.get("CLAUDE_PROJECT_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from blackbox.db import get_conn
+from sunyte.db import get_conn
 
 
 def main():

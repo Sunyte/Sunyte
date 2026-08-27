@@ -6,7 +6,7 @@
           {
             "type": "command",
             "command": "python3",
-            "args": ["${CLAUDE_PROJECT_DIR}/blackbox/prompt_hook.py"]
+            "args": ["${CLAUDE_PROJECT_DIR}/sunyte/prompt_hook.py"]
           }
         ]
       }
@@ -18,7 +18,7 @@
           {
             "type": "command",
             "command": "python3",
-            "args": ["${CLAUDE_PROJECT_DIR}/blackbox/session_hooks.py"]
+            "args": ["${CLAUDE_PROJECT_DIR}/sunyte/session_hooks.py"]
           }
         ]
       }
@@ -29,7 +29,7 @@
           {
             "type": "command",
             "command": "python3",
-            "args": ["${CLAUDE_PROJECT_DIR}/blackbox/session_hooks.py"]
+            "args": ["${CLAUDE_PROJECT_DIR}/sunyte/session_hooks.py"]
           }
         ]
       }
@@ -41,7 +41,7 @@
           {
             "type": "command",
             "command": "python3",
-            "args": ["${CLAUDE_PROJECT_DIR}/blackbox/guard.py"]
+            "args": ["${CLAUDE_PROJECT_DIR}/sunyte/guard.py"]
           }
         ]
       }
@@ -53,7 +53,7 @@
           {
             "type": "command",
             "command": "python3",
-            "args": ["${CLAUDE_PROJECT_DIR}/blackbox/logger.py"]
+            "args": ["${CLAUDE_PROJECT_DIR}/sunyte/logger.py"]
           }
         ]
       }
@@ -64,7 +64,7 @@
           {
             "type": "command",
             "command": "python3",
-            "args": ["${CLAUDE_PROJECT_DIR}/blackbox/cost_hook.py"]
+            "args": ["${CLAUDE_PROJECT_DIR}/sunyte/cost_hook.py"]
           }
         ]
       }

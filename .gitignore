@@ -1,6 +1,6 @@
-blackbox.db
-blackbox.db-wal
-blackbox.db-shm
+sunyte.db
+sunyte.db-wal
+sunyte.db-shm
 sandbox/
 __pycache__/
 *.pyc

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """PreToolUse hook. Runs BEFORE every tool call. Delegates the actual rule
-checking to blackbox.core.check_guard - the SAME rule engine used by the
+checking to sunyte.core.check_guard - the SAME rule engine used by the
 LangChain/custom-agent path - so every feature (dangerous patterns, regex,
 protected paths, spend limits, tool-call/time limits) applies identically
 here, without duplicating the logic."""
@@ -10,7 +10,7 @@ import os
 import json
 
 sys.path.insert(0, os.environ.get("CLAUDE_PROJECT_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from blackbox.core import check_guard
+from sunyte.core import check_guard
 
 
 def deny(reason: str):

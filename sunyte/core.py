@@ -1,14 +1,14 @@
-"""Core black-box logic, callable directly from any agent loop.
+"""Core Sunyte logic, callable directly from any agent loop.
 This is the same rules/logging engine used by the Claude Code hooks,
 just exposed as plain Python functions instead of stdin/JSON scripts."""
 
 import re
 import json
 import datetime
-from blackbox.db import get_conn, get_last_event_hash
-from blackbox.config import load_config
-from blackbox.alert import send_alert
-from blackbox.hashchain import compute_hash
+from sunyte.db import get_conn, get_last_event_hash
+from sunyte.config import load_config
+from sunyte.alert import send_alert
+from sunyte.hashchain import compute_hash
 
 # Tool-name aliases so the same rules apply whether you're on Claude Code
 # ("Bash", "Write") or the LangChain/custom-agent path ("run_bash", "write_file").

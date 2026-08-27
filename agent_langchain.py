@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""A real LangChain agent, instrumented by agent-blackbox.
+"""A real LangChain agent, instrumented by Sunyte.
 Compare this to agent.py - notice the tools are normal LangChain @tool
-functions with ONE extra decorator (@black_box_tool()) added. That's
+functions with ONE extra decorator (@sunyte_tool()) added. That's
 the entire integration.
 
 Usage:
@@ -20,9 +20,9 @@ from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_groq import ChatGroq
 
-from blackbox.langchain_guard import black_box_tool, set_current_session
-from blackbox.langchain_handler import BlackBoxCallbackHandler
-from blackbox.core import start_session, end_session, log_user_prompt
+from sunyte.langchain_guard import sunyte_tool, set_current_session
+from sunyte.langchain_handler import SunyteCallbackHandler
+from sunyte.core import start_session, end_session, log_user_prompt
 
 MODEL = "openai/gpt-oss-120b"
 SANDBOX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sandbox")
@@ -37,10 +37,10 @@ def _safe_path(path: str) -> str:
     return full
 
 
-# --- These are normal LangChain tools. @black_box_tool() is the only addition. ---
+# --- These are normal LangChain tools. @sunyte_tool() is the only addition. ---
 
 @tool
-@black_box_tool()
+@sunyte_tool()
 def read_file(path: str) -> str:
     """Read a file from the sandbox directory."""
     try:
@@ -51,7 +51,7 @@ def read_file(path: str) -> str:
 
 
 @tool
-@black_box_tool()
+@sunyte_tool()
 def write_file(path: str, content: str) -> str:
     """Write content to a file in the sandbox directory."""
     try:
@@ -63,7 +63,7 @@ def write_file(path: str, content: str) -> str:
 
 
 @tool
-@black_box_tool()
+@sunyte_tool()
 def run_bash(command: str) -> str:
     """Run a shell command inside the sandbox directory."""
     try:
@@ -94,7 +94,7 @@ def main():
     set_current_session(session_id)          # <- tools now log/guard against this session
     start_session(session_id, cwd=SANDBOX)
     log_user_prompt(session_id, task)
-    handler = BlackBoxCallbackHandler(session_id)   # <- tracks cost per LLM call
+    handler = SunyteCallbackHandler(session_id)   # <- tracks cost per LLM call
     print(f"[session {session_id[:8]}] starting: {task}\n")
 
     llm = ChatGroq(model=MODEL, api_key=api_key, temperature=0.7)
