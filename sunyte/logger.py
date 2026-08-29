@@ -8,7 +8,7 @@ import sys
 import os
 import json
 
-sys.path.insert(0, os.environ.get("CLAUDE_PROJECT_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sunyte.core import log_event
 
 def main():

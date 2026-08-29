@@ -168,6 +168,23 @@ def check_spend_limit(session_id: str):
     return True, ""
 
 
+def _touches_protected_path(protected: str, command: str) -> bool:
+    """Boundary-aware check for a protected path inside a raw shell command.
+
+    Plain substring matching is too eager here: `.env` would match inside
+    `os.environ`, `printenv`, etc. We require the token to sit at a path-ish
+    boundary - not glued to a preceding word character or dot, and (unless the
+    token itself ends in `/`) not glued to a following word character.
+    """
+    token = re.escape(protected.lower())
+    trailing = "" if protected.endswith(("/", "\\")) else r"(?![A-Za-z0-9])"
+    pattern = r"(?<![A-Za-z0-9.])" + token + trailing
+    try:
+        return re.search(pattern, command.lower()) is not None
+    except re.error:
+        return protected.lower() in command.lower()
+
+
 def _extract_path(tool_input: dict):
     for field in FILE_PATH_FIELDS:
         if field in tool_input:
@@ -181,7 +198,7 @@ def _deny(session_id, tool_name, tool_input, msg, rule_name, alert_msg):
     sends the alert, and returns the (False, reason) tuple."""
     _record_flag(session_id, rule_name, "block", msg)
     log_event(session_id, tool_name, tool_input, f"BLOCKED: {msg}", decision="block")
-    send_alert(alert_msg)
+    send_alert(alert_msg, severity="block")
     return False, msg
 
 
@@ -217,7 +234,7 @@ def check_guard(session_id: str, tool_name: str, tool_input: dict):
         # Rule 2b: protected paths, checked as a substring against the raw command too
         # (covers things like `cat .env` or `rm .ssh/id_rsa` that aren't in file-path fields)
         for protected in cfg.get("protected_paths", []):
-            if protected.lower() in command.lower():
+            if _touches_protected_path(protected, command):
                 msg = f"Command touches a protected path: '{protected}'"
                 return _deny(session_id, tool_name, tool_input, msg, "protected_path",
                              f"Blocked command touching protected path in session {session_id[:8]}: `{command[:100]}`")

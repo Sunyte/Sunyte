@@ -1,92 +1,42 @@
-# Sunyte config
-# Edit these values to set your own limits. No restart needed — read fresh each check.
+# ---------------------------------------------------------------------------
+# config.yaml is OPTIONAL.
+#
+# Sunyte ships with sensible defaults (see sunyte/defaults.py) and works with
+# no config at all. Per-project blocklist changes are easiest through:
+#
+#     /sunyte-block add "npm publish"        (inside Claude Code)
+#     sunyte block add "npm publish"         (on the CLI)
+#
+# ...which writes .sunyte/rules.json. Use this file only if you'd rather keep
+# limits and rules in version control as YAML. It needs PyYAML installed
+# (`pip install pyyaml`); without it this file is ignored and defaults apply.
+#
+# Anything set here overrides a default; anything omitted keeps the default.
+# Re-read on every check — no restart needed.
+# ---------------------------------------------------------------------------
 
 limits:
-  max_session_minutes: 30      # flag if a session runs longer than this
-  max_tool_calls: 200          # flag if a session makes more than this many tool calls
-  max_spend_usd: 0.01          # kill switch: stop the session if it spends more than this
-  spend_warning_pcts: [50, 75, 90]   # send a non-blocking WARNING alert at each of these % of max_spend_usd
+  max_session_minutes: 600
+  max_tool_calls: 200
+  max_spend_usd: 5.00            # kill switch: stop the session past this spend
+  spend_warning_pcts: [50, 75, 90]
 
-# Groq pricing for openai/gpt-oss-120b (per Groq's published rates, verified Aug 2026)
-pricing:
-  input_per_million_usd: 0.15
-  output_per_million_usd: 0.60
-
-# Claude API pricing per million tokens (verified Aug 2026, Anthropic's current standard rates)
-# Matched by substring against the model name found in the Claude Code transcript.
-claude_pricing:
-  sonnet-5:   {input: 2.00, output: 10.00, cache_write: 2.50, cache_read: 0.20}
-  opus-4-8:   {input: 5.00, output: 25.00, cache_write: 6.25, cache_read: 0.50}
-  haiku-4-5:  {input: 1.00, output: 5.00,  cache_write: 1.25, cache_read: 0.10}
-  default:    {input: 3.00, output: 15.00, cache_write: 3.75, cache_read: 0.30}
-
-# Tools NOT in this list will be flagged as "off-path" (warn only, not blocked, by default)
-allowed_tools:
-  - read_file
-  - write_file
-  - run_bash
-
-# Tools that are always blocked outright (kill switch territory)
-blocked_tools: []
-# Example: blocked_tools: ["Bash"]   # uncomment to hard-block all shell commands
-
-# Simple substring match against the full bash command. Case-insensitive.
-# Expanded to cover common real-world agent disasters, not just filesystem wipes.
+# Added on top of the built-in list, not instead of it.
 dangerous_bash_patterns:
-  # destructive filesystem
   - "rm -rf"
-  - "sudo rm"
-  - ":(){ :|:& };:"        # fork bomb
-  - "mkfs"
-  - "> /dev/sda"
-  - "> /dev/disk"
-  - "chmod -R 777"
-  - "chmod 777 /"
-  # supply-chain / remote code execution
-  - "curl | bash"
-  - "curl | sh"
-  - "wget | bash"
-  - "wget | sh"
-  - "curl -s | bash"
-  # git disasters
   - "git push --force"
-  - "git push -f"
-  - "git reset --hard"
-  - "git clean -fdx"
-  # cloud destructive operations
-  - "aws s3 rm --recursive"
-  - "aws s3api delete-bucket"
-  - "gcloud sql instances delete"
-  - "gcloud compute instances delete"
-  - "az vm delete"
-  - "kubectl delete namespace"
-  - "terraform destroy"
-  # secrets / credentials
-  - "cat /etc/shadow"
-  - ".ssh/id_rsa"
 
-# Regex patterns for cases a simple substring can't catch cleanly
-# (e.g. "DELETE FROM x WHERE y" is fine, "DELETE FROM x" alone is not).
-# Matched case-insensitively against the full command/query text.
 dangerous_regex_patterns:
   - "drop\\s+table"
-  - "delete\\s+from\\s+\\w+\\s*(;|$)"     # DELETE FROM table with no WHERE clause
-  - "truncate\\s+table"
-  - "update\\s+\\w+\\s+set\\s+.*(;|$)(?!.*where)"  # UPDATE ... SET with no WHERE
 
-# Paths that should never be written to, deleted, or executed against,
-# regardless of which tool is used. Matched as a substring against any
-# file path or bash command.
 protected_paths:
-  - ".git/"
   - ".env"
   - ".ssh/"
-  - "id_rsa"
-  - "node_modules/.bin"
-  - "/etc/"
-  - "/System/"
-  - "C:\\Windows\\System32"
 
+# Slack alerting requires the Team tier (sunyte tier activate <token>).
 alerts:
-  slack_webhook_url: ""   # paste your Slack incoming webhook URL here
-  enabled: true
+  slack_webhook_url: ""
+  enabled: false
+  # Compliance tier only:
+  escalation_emails: []
+  escalation_webhook_url: ""

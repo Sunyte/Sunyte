@@ -7,7 +7,7 @@ import os
 import json
 import datetime
 
-sys.path.insert(0, os.environ.get("CLAUDE_PROJECT_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sunyte.db import get_conn
 
 

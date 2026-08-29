@@ -9,11 +9,11 @@ import os
 import json
 import datetime
 
-sys.path.insert(0, os.environ.get("CLAUDE_PROJECT_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sunyte.db import get_conn
 from sunyte.config import load_config
 from sunyte.alert import send_alert
-from sunyte.core import check_budget_warning
+from sunyte.core import check_budget_warning, _get_warning_pcts
 
 
 def price_for_model(model_name: str, pricing_table: dict) -> dict:
@@ -96,8 +96,7 @@ def main():
     conn.commit()
 
     max_spend = cfg.get("limits", {}).get("max_spend_usd", 999999)
-    warning_pct = cfg.get("limits", {}).get("spend_warning_pct", 75)
-    check_budget_warning(session_id, cost, max_spend, warning_pct)
+    check_budget_warning(session_id, cost, max_spend, _get_warning_pcts(cfg))
 
     if cost >= max_spend:
         conn.execute(

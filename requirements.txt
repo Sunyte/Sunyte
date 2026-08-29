@@ -1,5 +1,12 @@
-PyYAML==6.0.2
-requests==2.32.3
+# Sunyte's core (Claude Code hooks, guard, CLI, tamper-evident log) needs
+# NOTHING outside the Python standard library.
+#
+# The lines below are only for the optional demo agents and integrations:
+#   agent.py            -> groq
+#   agent_langchain.py  -> langchain-core, langchain-groq
+#   config.yaml support -> PyYAML  (otherwise use .sunyte/rules.json / defaults)
+
 groq==0.11.0
 langchain-core>=0.3.33,<0.4.0
 langchain-groq==0.2.4
+PyYAML>=6.0,<7.0

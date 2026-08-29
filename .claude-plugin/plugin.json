@@ -1,0 +1,24 @@
+{
+  "name": "sunyte",
+  "version": "0.2.0",
+  "description": "Flight recorder for AI coding agents: blocks dangerous commands before they run, tracks real dollar spend with a kill switch, and keeps a tamper-evident frame-by-frame replay of every session. Edit the blocklist yourself with /sunyte-block.",
+  "author": {
+    "name": "Sunyte",
+    "url": "https://github.com/Sunyte"
+  },
+  "homepage": "https://github.com/Sunyte/Sunyte",
+  "repository": "https://github.com/Sunyte/Sunyte",
+  "license": "MIT",
+  "keywords": [
+    "security",
+    "guardrails",
+    "observability",
+    "audit",
+    "compliance",
+    "cost-tracking",
+    "hooks"
+  ],
+  "hooks": "./hooks/hooks.json",
+  "commands": "./commands",
+  "agents": "./agents"
+}

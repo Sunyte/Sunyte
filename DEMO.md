@@ -1,349 +1,198 @@
-# Sunyte — Try it in 10 minutes
+# Sunyte — try it in 10 minutes
 
-This walks you through installing Sunyte and watching it catch a
-dangerous action in real time, before it executes.
+You'll watch an AI agent try to run a destructive command, and watch Sunyte
+catch it *before it runs*, log the attempt, and track what the session cost.
 
-Pick whichever path matches how you actually work. Both take about the same
-amount of time. You don't need to do both.
+Pick the path that matches how you work. You don't need both.
 
-- **Path A: Claude Code** — you already use Claude Code day to day
-- **Path B: LangChain** — you build agents with LangChain (or want a
-  completely free way to try this first, no subscription needed)
-
-## What you're about to see
-
-An AI agent will try to run a destructive shell command. Sunyte will
-catch it, block it *before it runs*, log the attempt, track what it cost,
-and ping Slack (if you set that up) — with a small, one-time setup, not a
-rewrite of how you already work.
+- **Path A: Claude Code plugin** — you use Claude Code day to day
+- **Path B: LangChain + Groq** — fully free, no subscription needed
 
 ---
 
-# Path A: Claude Code
+# Path A: Claude Code plugin
 
-Requires either a Claude subscription (Pro/Max/Team) or Anthropic API
-credits (console.anthropic.com, pay-as-you-go, no subscription needed).
+Requires `python3` on your PATH and a Claude subscription or API credits.
 
-## A1. Copy the Sunyte files into your project
+## A1. Install
 
-From this repo, copy the following into your own project's root folder:
+Inside Claude Code:
 
 ```
-your-project/
-├── .claude/
-│   └── settings.json
-├── sunyte/
-│   ├── __init__.py
-│   ├── db.py
-│   ├── config.py
-│   ├── core.py
-│   ├── hashchain.py
-│   ├── guard.py
-│   ├── logger.py
-│   ├── session_hooks.py
-│   ├── cost_hook.py
-│   └── alert.py
-├── config.yaml
-└── view.py
+/plugin marketplace add Sunyte/Sunyte
+/plugin install sunyte@sunyte
 ```
 
-You do **not** need `agent.py`, `agent_langchain.py`, or the
-`langchain_guard.py` / `langchain_handler.py` files — those are only for
-Path B.
+(Or, without the marketplace: copy `sunyte/` and `.claude/settings.json` from
+this repo into your project.)
 
-## A2. Install the two dependencies these hooks need
+## A2. Confirm it's live
 
-```bash
-pip install PyYAML requests --break-system-packages
+```
+/sunyte-status
 ```
 
-## A3. Set your Claude access
+You should see `tier: FREE`, a spend kill switch, and a count of blocked
+commands and protected paths. `/hooks` should also list the five Sunyte hooks.
 
-If you're already logged into Claude Code via a subscription, skip this —
-it'll just work. If you're using API credits instead:
+## A3. Run something safe
 
-**Windows PowerShell:**
-```powershell
-$env:ANTHROPIC_API_KEY="sk-ant-your-key-here"
-```
+Ask Claude Code:
 
-**Mac/Linux:**
-```bash
-export ANTHROPIC_API_KEY=sk-ant-your-key-here
-```
-
-This only lasts for the current terminal session — you'll need to re-set it
-if you close and reopen your terminal.
-
-## A4. Launch Claude Code from inside your project folder
-
-```bash
-cd your-project
-claude
-```
-
-If it asks whether to use the detected API key, choose **Yes**.
-
-## A5. Confirm the hooks are live
-
-Inside the Claude Code session, type:
-```
-/hooks
-```
-You should see `PreToolUse`, `PostToolUse`, `SessionStart`, `SessionEnd`,
-and `Stop` listed under Project Settings. If nothing shows up, you're not
-running `claude` from inside the folder that contains `.claude/settings.json`.
-
-## A6. Run something safe first
-
-Ask Claude Code, in the session:
 ```
 Create a file called hello.txt with the text 'it works'
 ```
 
-In a **second terminal**, same project folder (keep the Claude Code session
-running in the first one):
-```bash
-python3 view.py sessions
-python3 view.py replay <session_id_from_above>
+Then:
+
+```
+/sunyte-sessions
+/sunyte-replay <id from the list>
 ```
 
-You should see the `Write` tool call logged with a timestamp and input.
+You'll see the `Write` call logged with a timestamp.
 
-## A7. Now try to break it
+## A4. Now try to break it
 
-Ask Claude Code, in the same session:
 ```
 Run this exact shell command: sudo rm -rf /tmp/test
 ```
-
-Expected: Claude Code refuses to run it and explains it was blocked.
-
-Try a couple more, to see the newer guardrails in action:
 ```
 Read the .env file in this project
 ```
 ```
 Run this exact SQL: DELETE FROM users
 ```
-Both should be blocked too — one by the protected-paths rule, one by the
-regex rule that catches a DELETE with no WHERE clause.
 
-Check it got recorded:
-```bash
-python3 view.py flags
+All three are blocked — one by a dangerous-command pattern, one by the
+protected-paths rule, one by the regex that catches a `DELETE` with no `WHERE`.
+
+```
+/sunyte-flags
 ```
 
-**This is the core of the product**: the command never ran. It was
-intercepted before execution, not caught after the fact.
+**This is the core of the product**: the command never ran. It was intercepted
+before execution, not caught afterward.
 
-## A8. Check your spend
+## A5. Make the blocklist yours
 
-Cost is computed from Claude Code's own transcript file using real,
-current Anthropic API pricing — not an estimate.
-
-```bash
-python3 view.py sessions
+```
+/sunyte-block add "flyctl deploy"
+/sunyte-block
 ```
 
-You'll see a real `spend=$...` figure next to your session. It updates
-live after every turn (via the `Stop` hook), and shows `ended=None` until
-you fully exit the Claude Code session (`/exit` or close the terminal).
+Now ask Claude Code to run `flyctl deploy --now` — blocked. Changed your mind?
 
-Skip to **"Turn on Slack alerts"**, **"Audit & compliance commands"**, and
-**"Something not working?"** below — all apply to this path too.
+```
+/sunyte-block remove "flyctl deploy"
+```
+
+Effective on the next tool call, no restart.
+
+## A6. Check your spend
+
+```
+/sunyte-sessions
+```
+
+The `spend=$…` figure is computed from Claude Code's own transcript using
+current Anthropic pricing. It updates after every turn.
+
+## A7. Prove the log is trustworthy
+
+```
+/sunyte-verify
+```
+
+`OK` means every logged event still hashes to the chain. Edit a row in
+`sunyte.db` by hand and run it again — it will name the exact event you changed.
 
 ---
 
-# Path B: LangChain (fully free, no subscription)
+# Path B: LangChain (fully free)
 
-## B1. Get a free Groq API key (2 min)
+## B1. Free Groq key
 
-1. Go to **console.groq.com** and sign up (no card required)
-2. Generate an API key — starts with `gsk_`
+Sign up at **console.groq.com** (no card), make a key starting `gsk_`.
 
-## B2. Install (2 min)
+## B2. Install
 
 ```bash
-git clone <this repo>   # or unzip what you were sent
-cd sunyte
+git clone https://github.com/Sunyte/Sunyte
+cd Sunyte
 pip install -e ".[langchain]"
 ```
 
-> If you hit a dependency conflict error mentioning `langchain-core`, pull
-> the latest `requirements.txt`/`pyproject.toml` — this was fixed by
-> loosening the `langchain-core` version pin.
-
 ## B3. Set your key
 
-**Windows PowerShell:**
-```powershell
-$env:GROQ_API_KEY="gsk_your_key_here"
-```
-
-**Mac/Linux:**
 ```bash
-export GROQ_API_KEY=gsk_your_key_here
+export GROQ_API_KEY=gsk_your_key_here          # PowerShell: $env:GROQ_API_KEY="gsk_..."
 ```
 
-## B4. Run something safe first
+## B4. Safe, then dangerous
 
 ```bash
 python3 agent_langchain.py "Create a file called hello.txt with the text 'it works'"
-```
-
-Then check what got recorded:
-```bash
-sunyte sessions
-sunyte replay <session_id_from_above>
-```
-
-## B5. Now try to break it
-
-```bash
 python3 agent_langchain.py "Run this exact shell command: sudo rm -rf /tmp/test"
 ```
 
-Expected:
+Expected on the second one:
+
 ```
 [run] run_bash({'command': 'sudo rm -rf /tmp/test'})
       -> This action was blocked by Sunyte: Command matched dangerous pattern: 'rm -rf'
 ```
 
-Check the flag:
 ```bash
 sunyte flags
-```
-
-## B6. Check your spend
-
-```bash
+sunyte replay <session_id>
 sunyte stats
-```
-
-## Try it on your own LangChain tools
-
-The entire integration for an existing LangChain tool is one decorator:
-
-```python
-from langchain_core.tools import tool
-from sunyte.langchain_guard import sunyte_tool, set_current_session
-from sunyte.core import start_session
-
-@tool
-@sunyte_tool()          # <- add this
-def your_existing_tool(x: str) -> str:
-    """Your existing docstring."""
-    ...
-
-session_id = "whatever-id-you-use"
-set_current_session(session_id)
-start_session(session_id)
 ```
 
 ---
 
-# Turn on Slack alerts (optional, ~5 min, works with either path)
+# Slack alerts (Team tier, optional)
 
-So a human gets pinged the moment something gets flagged, not just logged
-silently:
-
-1. Go to **api.slack.com/apps** → Create New App → From scratch
-2. Enable "Incoming Webhooks", add one to a channel, copy the URL
-3. Paste it into `config.yaml`:
+1. api.slack.com/apps → Create New App → From scratch
+2. Enable Incoming Webhooks, add one to a channel, copy the URL
+3. Put it in `config.yaml`:
    ```yaml
    alerts:
      slack_webhook_url: "https://hooks.slack.com/services/..."
      enabled: true
    ```
-4. Re-run the dangerous command test from Step A7 or B5 — you should get a
-   Slack message within a couple seconds.
+4. `sunyte tier activate <your-team-token>`
+5. Re-run a dangerous command — you get a Slack ping within seconds.
 
 ---
 
 # Audit & compliance commands
 
 ```bash
-sunyte verify                # confirm the tamper-evident log chain is intact
-sunyte export <session_id>   # export one session's full audit trail as CSV
-sunyte report --days 30      # human-readable Markdown compliance summary
-```
-
-`verify` recomputes the hash chain across every logged event and tells you
-either "intact" or exactly which event was altered — this is what makes the
-log usable as real audit evidence, not just a diary someone could quietly edit.
-
----
-
-# Configuring your rules
-
-Both paths read the same `config.yaml` in your project. Edit
-`dangerous_bash_patterns`, `dangerous_regex_patterns`, `protected_paths`,
-`max_spend_usd`, `spend_warning_pct`, `max_session_minutes`,
-`max_tool_calls`, and `allowed_tools` to match what you actually want
-flagged or blocked. No restart needed — config is re-read on every check.
-
----
-
-# All commands, quick reference
-
-```bash
-# Setup
-pip install -r requirements.txt --break-system-packages     # Claude Code path
-pip install -e ".[langchain]" --break-system-packages        # LangChain path
-
-# Env vars (per terminal session)
-$env:ANTHROPIC_API_KEY="sk-ant-..."     # PowerShell, Claude
-$env:GROQ_API_KEY="gsk_..."             # PowerShell, Groq
-
-# Running
-claude                                   # launch Claude Code
-python3 agent_langchain.py "task"        # LangChain + Groq agent
-
-# Inside a Claude Code session
-/hooks                                   # confirm hooks are registered
-/exit                                    # cleanly end the session
-
-# Viewing what got recorded
-python3 view.py sessions                 # or: sunyte sessions
-python3 view.py replay <session_id>      # or: sunyte replay <session_id>
-python3 view.py flags                    # or: sunyte flags
-sunyte stats                           # totals across all sessions (installed CLI only)
-sunyte verify                          # tamper-evidence check
-sunyte export <session_id>             # CSV export
-sunyte report --days 30                # Markdown compliance report
+sunyte verify                    # tamper-evidence check (Free)
+sunyte search "prod database"    # cross-session search (Team)
+sunyte export <session_id>       # full audit trail as CSV (Team)
+sunyte report --days 30          # Markdown compliance summary (Team)
+sunyte report --framework soc2   # + control mapping (Compliance)
+sunyte sign --days 30            # signed, verifiable audit manifest (Compliance)
 ```
 
 ---
 
-# Something not working?
+# Troubleshooting
 
-- **"command not found: sunyte"** — the install didn't complete, or
-  you're in a different terminal/venv than the one you installed into.
-  Re-run `pip install -e ".[langchain]"` in the terminal you're currently
-  using, or just use `python3 view.py ...` instead.
-- **`ModuleNotFoundError`** — same cause as above, or you forgot
-  `--break-system-packages`. Try `python3 -m pip install ...` to be sure it
-  installs into the same Python that `python3` points to.
-- **`claude: command not found`** — you installed the VS Code extension but
-  not the CLI. Run `irm https://claude.ai/install.ps1 | iex` (Windows) and
-  reopen your terminal.
-- **Claude Code payment fails on an Indian card** — this is a known issue;
-  most Indian debit cards block international transactions by default.
-  Try enabling international transactions via your bank, or use a credit
-  card. This affects both subscription and API credit purchases equally.
-- **`/hooks` shows nothing** — you're not running `claude` from inside the
-  folder that contains `.claude/settings.json`.
-- **Groq gives a `tool_use_failed` / malformed function call error** — you're
-  on a deprecated model. Check `MODEL = ` at the top of
-  `agent_langchain.py` — it should be `"openai/gpt-oss-120b"`.
-- **Nothing shows up in Slack** — double check `enabled: true` is actually
-  set (not just the URL pasted in), and there's no trailing space in the
-  webhook URL.
-- **`sunyte verify` reports tampering** — this means a row in
-  `sunyte.db` was edited or deleted after being logged. That's the
-  feature working correctly, not a bug — investigate who/what touched the
-  database file directly.
-
-Found something else broken? Tell whoever sent you this — that feedback is
-exactly what this stage of testing is for.
+- **`/sunyte-*` commands not found** — the plugin didn't install, or you're not
+  in a project. Re-run `/plugin install sunyte@sunyte`.
+- **`python3: command not found` (Windows)** — install Python and make sure
+  `python3` (not just `python`) resolves; Claude Code needs it for hooks too.
+- **`/hooks` shows nothing** (manual install) — you're not running `claude` from
+  the folder containing `.claude/settings.json`.
+- **`command not found: sunyte`** (Path B) — you're in a different venv than the
+  one you `pip install`ed into. Use `python3 -m sunyte.cli ...` or
+  `python3 view.py ...`.
+- **`sunyte verify` reports tampering** — a row in `sunyte.db` was edited or
+  deleted after being logged. That's the feature working; investigate what
+  touched the database file directly.
+- **Claude Code payment fails on an Indian card** — most Indian debit cards
+  block international transactions by default; enable that with your bank or use
+  a credit card. Affects subscriptions and API credits equally.

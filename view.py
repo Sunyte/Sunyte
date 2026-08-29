@@ -4,7 +4,10 @@
   python3 view.py replay <session_id>   # frame-by-frame replay
   python3 view.py flags [session_id]    # show flagged/blocked events
 """
+import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sunyte.db import get_conn
 
 

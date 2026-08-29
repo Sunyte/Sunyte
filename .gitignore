@@ -1,6 +1,10 @@
 sunyte.db
 sunyte.db-wal
 sunyte.db-shm
+.sunyte/
+sunyte_export_*.csv
+sunyte_report_*.md
+sunyte_manifest_*.json
 sandbox/
 __pycache__/
 *.pyc
@@ -8,3 +12,6 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+
+# internal / not for the public marketplace repo
+bmodel.md

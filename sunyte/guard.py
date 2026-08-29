@@ -9,7 +9,10 @@ import sys
 import os
 import json
 
-sys.path.insert(0, os.environ.get("CLAUDE_PROJECT_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+# The bundled `sunyte` package always sits next to this script (repo root or
+# plugin root). Project data (config.yaml, sunyte.db, .sunyte/) is located
+# separately via CLAUDE_PROJECT_DIR inside sunyte.config / sunyte.db.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sunyte.core import check_guard
 
 
