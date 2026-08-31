@@ -1,6 +1,6 @@
 {
   "name": "sunyte",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Flight recorder for AI coding agents: blocks dangerous commands before they run, tracks real dollar spend with a kill switch, and keeps a tamper-evident frame-by-frame replay of every session. Edit the blocklist yourself with /sunyte-block.",
   "author": {
     "name": "Sunyte",
@@ -18,7 +18,5 @@
     "cost-tracking",
     "hooks"
   ],
-  "hooks": "./hooks/hooks.json",
-  "commands": "./commands",
-  "agents": "./agents"
+  "hooks": "./hooks/hooks.json"
 }

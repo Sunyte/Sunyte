@@ -13,7 +13,7 @@
       "name": "sunyte",
       "source": "./",
       "description": "Blocks dangerous commands before they run, tracks real dollar spend with a kill switch, and keeps a tamper-evident, frame-by-frame replay of every Claude Code session. Runs on the Python standard library only — no pip install. Edit the blocklist yourself with /sunyte-block.",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "category": "security",
       "keywords": ["security", "guardrails", "audit", "compliance", "cost-tracking"],
       "license": "MIT",
