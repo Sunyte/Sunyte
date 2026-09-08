@@ -137,6 +137,25 @@ check("tool-call kill switch trips", allowed is False and "tool call" in reason)
 
 
 # --------------------------------------------------------------------------- #
+section("self-commands stay usable after a limit trips")
+# --------------------------------------------------------------------------- #
+# SID's spend limit and SID2's tool-call limit are both tripped above.
+# /sunyte-* self-management must still get through, or a tripped limit locks
+# the user out of the one place they can see why and raise it.
+allowed, _ = core.check_guard(SID, "Bash", {"command": 'python3 "/plugin/sunyte/cli.py" status'})
+check("self-command allowed after spend limit trips", allowed is True)
+
+allowed, _ = core.check_guard(SID, "Bash", {"command": "sunyte config set max-spend 10"})
+check("bare `sunyte config` allowed after spend limit trips", allowed is True)
+
+allowed, _ = core.check_guard(SID2, "Bash", {"command": 'python3 "/plugin/sunyte/cli.py" config set max-calls 500'})
+check("self-command allowed after tool-call limit trips", allowed is True)
+
+allowed, _ = core.check_guard(SID, "Bash", {"command": "echo still-blocked"})
+check("ordinary command still blocked after spend limit trips", allowed is False)
+
+
+# --------------------------------------------------------------------------- #
 section("tamper-evident log")
 # --------------------------------------------------------------------------- #
 intact, msg = core.verify_chain()

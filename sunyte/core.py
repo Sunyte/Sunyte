@@ -15,6 +15,30 @@ from sunyte.hashchain import compute_hash
 BASH_TOOL_NAMES = {"Bash", "run_bash"}
 FILE_PATH_FIELDS = ["file_path", "path", "notebook_path"]
 
+# Matches a Bash call that is Sunyte managing itself: the /sunyte-* slash
+# commands and the `sunyte` CLI all shell out to cli.py (see commands/*.md).
+_SUNYTE_SELF_COMMAND_RE = re.compile(
+    r"(^|[\\/])sunyte[\\/]cli\.py\b|(^|[\s;&|])sunyte\s+(status|config|tier|block|"
+    r"sessions|replay|flags|verify|search|export|report|sign|stats)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_sunyte_self_command(tool_name: str, tool_input: dict) -> bool:
+    """True when this tool call is the user managing Sunyte itself (a
+    /sunyte-* slash command or the `sunyte` CLI), not agent work.
+
+    Limit-based denials (spend/tool-call/time) must never block these, or a
+    tripped limit locks the user out of the one place they can see why, and
+    raise it - `/sunyte-status` and `/sunyte-config` stop working right when
+    they're needed most. Safety rules (dangerous commands, protected paths,
+    hard-blocked tools) still apply to self-commands too - this only exempts
+    the limit checks."""
+    if tool_name not in BASH_TOOL_NAMES:
+        return False
+    command = tool_input.get("command", "")
+    return bool(_SUNYTE_SELF_COMMAND_RE.search(command))
+
 
 def start_session(session_id: str, cwd: str = ""):
     conn = get_conn()
@@ -207,6 +231,7 @@ def check_guard(session_id: str, tool_name: str, tool_input: dict):
     This is the single shared rule engine used by both the Claude Code hooks
     and the LangChain/custom-agent integration."""
     cfg = load_config()
+    is_self_command = _is_sunyte_self_command(tool_name, tool_input)
 
     # Rule 1: hard-blocked tools
     if tool_name in cfg.get("blocked_tools", []):
@@ -249,13 +274,21 @@ def check_guard(session_id: str, tool_name: str, tool_input: dict):
                              f"Blocked file access to protected path in session {session_id[:8]}: `{path}`")
 
     # Rule 4: spend limit (block) + multi-tier budget warnings (non-blocking, fire once each)
+    # Self-commands (/sunyte-status, /sunyte-config, ...) are exempt from the
+    # block below - see _is_sunyte_self_command - so a tripped limit never
+    # locks the user out of checking or raising it.
     limits = cfg.get("limits", {})
     max_spend = limits.get("max_spend_usd", 0.50)
     warning_pcts = _get_warning_pcts(cfg)
     spent = get_session_cost(session_id)
     check_budget_warning(session_id, spent, max_spend, warning_pcts)
-    if spent >= max_spend:
-        msg = f"Session has spent ${spent:.4f}, exceeding limit of ${max_spend:.2f}."
+    if spent >= max_spend and not is_self_command:
+        msg = (
+            f"💸 Sunyte spend limit reached — this session has spent ${spent:.4f}, "
+            f"past the ${max_spend:.2f} limit, so further tool calls are paused to "
+            f"protect your budget. Run /sunyte-status to review, or "
+            f"/sunyte-config set max-spend <amount> to raise the limit and continue."
+        )
         return _deny(session_id, tool_name, tool_input, msg, "max_spend",
                      f"Session {session_id[:8]} hit its spend limit (${spent:.4f}) and was stopped.")
 
@@ -263,9 +296,14 @@ def check_guard(session_id: str, tool_name: str, tool_input: dict):
     conn = get_conn()
     count = conn.execute("SELECT COUNT(*) FROM events WHERE session_id = ?", (session_id,)).fetchone()[0]
     max_calls = limits.get("max_tool_calls", 200)
-    if count >= max_calls:
+    if count >= max_calls and not is_self_command:
         conn.close()
-        msg = f"Session has made {count} tool calls, exceeding limit of {max_calls}."
+        msg = (
+            f"🔧 Sunyte tool-call limit reached — this session has made {count} tool "
+            f"calls, past the {max_calls}-call limit, so further tool calls are paused. "
+            f"Run /sunyte-status to review, or /sunyte-config set max-calls <N> to "
+            f"raise the limit and continue."
+        )
         return _deny(session_id, tool_name, tool_input, msg, "max_tool_calls",
                      f"Session {session_id[:8]} hit the tool-call limit ({count}) and was stopped.")
 
@@ -276,8 +314,13 @@ def check_guard(session_id: str, tool_name: str, tool_input: dict):
         started_at = datetime.datetime.fromisoformat(row[0])
         elapsed_minutes = (datetime.datetime.now(datetime.timezone.utc) - started_at).total_seconds() / 60
         max_minutes = limits.get("max_session_minutes", 30)
-        if elapsed_minutes >= max_minutes:
-            msg = f"Session has run {elapsed_minutes:.1f} min, exceeding limit of {max_minutes} min."
+        if elapsed_minutes >= max_minutes and not is_self_command:
+            msg = (
+                f"⏱️ Sunyte time limit reached — this session has run {elapsed_minutes:.1f} "
+                f"minutes, past the {max_minutes}-minute limit, so further tool calls are "
+                f"paused. Run /sunyte-status to review, or /sunyte-config set max-minutes <N> "
+                f"to raise the limit and continue."
+            )
             return _deny(session_id, tool_name, tool_input, msg, "max_session_time",
                          f"Session {session_id[:8]} exceeded time limit and was stopped.")
 
